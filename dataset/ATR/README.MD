@@ -1,0 +1,25 @@
+background     0
+hat            1
+hair           2 
+sunglass       3
+upper-clothes  4
+skirt          5
+pants          6
+dress          7
+belt           8
+left-shoe      9
+right-shoe     10
+face           11
+left-leg       12
+right-leg      13
+left-arm       14
+right-arm      15
+bag            16
+scarf          17
+
+0 background
+1-4 up
+5-10 down
+11 up
+12-13 down
+14-17 up
