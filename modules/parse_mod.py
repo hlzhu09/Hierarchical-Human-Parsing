@@ -19,9 +19,6 @@ class PAM_Module(nn.Module):
         self.query_conv = nn.Conv2d(in_channels=in_dim, out_channels=key_dim, kernel_size=1)
         self.key_conv = nn.Conv2d(in_channels=in_dim, out_channels=key_dim, kernel_size=1)
         self.gamma = nn.Parameter(torch.zeros(1))
-
-        # self.gamma = nn.Sequential(nn.Conv2d(in_channels=in_dim, out_channels=1, kernel_size=1, bias=True), nn.Sigmoid())
-
         self.softmax = nn.Softmax(dim=-1)
 
     def forward(self, x):
@@ -41,15 +38,10 @@ class PAM_Module(nn.Module):
         proj_key = self.key_conv(xp).view(m_batchsize, -1, wp*hp)
         energy = torch.bmm(proj_query, proj_key)
         attention = self.softmax(energy)
-        # proj_value = self.value_conv(x).view(m_batchsize, -1, width*height)
         proj_value = xp.view(m_batchsize, -1, wp*hp)
         
         out = torch.bmm(proj_value, attention.permute(0, 2, 1))
         out = out.view(m_batchsize, C, height, width)
-        # out = F.interpolate(out, (height, width), mode="bilinear", align_corners=True)
-
-        # gamma = self.gamma(x)
-        # out = (1-gamma)*out + gamma*x
         out = x+self.gamma*out
         return out
 
@@ -88,13 +80,6 @@ class ASPPModule(nn.Module):
                                         InPlaceABNSync(out_dim),
                                         nn.Conv2d(out_dim, 5, 1, bias=True),
                                         nn.Sigmoid())
-        # self.psaa_conv = nn.Sequential(nn.Conv2d(in_dim, out_dim, 1, padding=0, bias=False),
-        #                                 InPlaceABNSync(out_dim),
-        #                                 nn.Conv2d(out_dim, 5, 1, bias=True),
-        #                                 nn.Sigmoid())
-
-        # self.se = nn.Sequential(nn.Conv2d(out_dim, out_dim, 1, bias=True),
-        #                     nn.Sigmoid())
 
         self.project = nn.Sequential(nn.Conv2d(out_dim * 5, out_dim, kernel_size=1, padding=0, bias=False),
                                        InPlaceABNSync(out_dim))
@@ -107,25 +92,15 @@ class ASPPModule(nn.Module):
         feat3 = self.dilation_3(x)
         n, c, h, w = feat0.size()
         gp = self.gap(x)
-        # se = self.se(gp)
-
         feat4 = gp.expand(n, c, h, w)
-        # feat4 = F.interpolate(gp, (h, w), mode="bilinear", align_corners=True)
 
         # psaa
         y1 = torch.cat((x, feat0, feat1, feat2, feat3, feat4), 1)
-        # y1 = torch.cat((x, feat0, feat1, feat2, feat3), 1)
-
         psaa_att = self.psaa_conv(y1)
-        # psaa_att = self.psaa_conv(x)
-
         psaa_att_list = torch.split(psaa_att, 1, dim=1)
 
         y2 = torch.cat((psaa_att_list[0] * feat0, psaa_att_list[1] * feat1, psaa_att_list[2] * feat2, psaa_att_list[3] * feat3, psaa_att_list[4]*feat4), 1)
-        # y2 = torch.cat((psaa_att_list[0] * feat0, psaa_att_list[1] * feat1, psaa_att_list[2] * feat2, psaa_att_list[3] * feat3, feat4), 1)
-        # y2 = torch.cat((feat0, feat1, feat2, feat3, feat4), 1)
         out = self.project(y2)
-        # out = self.pam0(out)
         return out
 
 class ASPPModule2(nn.Module):
@@ -159,18 +134,6 @@ class ASPPModule2(nn.Module):
                                         InPlaceABNSync(out_dim),
                                         SEModule(out_dim, reduction=16))
 
-        self.psaa_conv = nn.Sequential(nn.Conv2d(in_dim+5 * out_dim, out_dim, 1, padding=0, bias=False),
-                                        InPlaceABNSync(out_dim),
-                                        nn.Conv2d(out_dim, 5, 1, bias=True),
-                                        nn.Sigmoid())
-        # self.psaa_conv = nn.Sequential(nn.Conv2d(in_dim, out_dim, 1, padding=0, bias=False),
-        #                                 InPlaceABNSync(out_dim),
-        #                                 nn.Conv2d(out_dim, 5, 1, bias=True),
-        #                                 nn.Sigmoid())
-
-        # self.se = nn.Sequential(nn.Conv2d(out_dim, out_dim, 1, bias=True),
-        #                     nn.Sigmoid())
-
         self.project = nn.Sequential(nn.Conv2d(out_dim * 5, out_dim, kernel_size=1, padding=0, bias=False),
                                        InPlaceABNSync(out_dim))
         self.pam0 = PAM_Module(in_dim=out_dim, key_dim=out_dim//8,value_dim=out_dim,out_dim=out_dim)
@@ -182,22 +145,7 @@ class ASPPModule2(nn.Module):
         feat3 = self.dilation_3(x)
         n, c, h, w = feat0.size()
         gp = self.gap(x)
-        # se = self.se(gp)
-
         feat4 = gp.expand(n, c, h, w)
-        # feat4 = F.interpolate(gp, (h, w), mode="bilinear", align_corners=True)
-
-        # psaa
-        # y1 = torch.cat((x, feat0, feat1, feat2, feat3, feat4), 1)
-        # y1 = torch.cat((x, feat0, feat1, feat2, feat3), 1)
-
-        # psaa_att = self.psaa_conv(y1)
-        # psaa_att = self.psaa_conv(x)
-
-        # psaa_att_list = torch.split(psaa_att, 1, dim=1)
-
-        # y2 = torch.cat((psaa_att_list[0] * feat0, psaa_att_list[1] * feat1, psaa_att_list[2] * feat2, psaa_att_list[3] * feat3, psaa_att_list[4]*feat4), 1)
-        # y2 = torch.cat((psaa_att_list[0] * feat0, psaa_att_list[1] * feat1, psaa_att_list[2] * feat2, psaa_att_list[3] * feat3, feat4), 1)
         y2 = torch.cat((feat0, feat1, feat2, feat3, feat4), 1)
         out = self.project(y2)
         out = self.pam0(out)
