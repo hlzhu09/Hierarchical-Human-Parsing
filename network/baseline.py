@@ -16,15 +16,14 @@ class DecoderModule(nn.Module):
         super(DecoderModule, self).__init__()
         self.conv1 = nn.Sequential(nn.Conv2d(512, 256, kernel_size=3, padding=1, stride=1, bias=False),
                                    BatchNorm2d(256), nn.ReLU(inplace=False),
-                                   nn.Conv2d(256, 256, kernel_size=1, padding=0, stride=1, bias=False),
-                                   BatchNorm2d(256), nn.ReLU(inplace=False),
-                                   SEModule(256, reduction=16) 
+                                   nn.Conv2d(256, 256, kernel_size=3, padding=1, stride=1, bias=False),
+                                   BatchNorm2d(256), nn.ReLU(inplace=False)
                                    )
 
         self.conv2 = nn.Sequential(nn.Conv2d(256, 48, kernel_size=1, stride=1, padding=0, dilation=1, bias=False),
                                    BatchNorm2d(48), nn.ReLU(inplace=False))
 
-        self.conv3 = nn.Sequential(nn.Conv2d(304, 256, kernel_size=3, padding=1, dilation=1, bias=False),
+        self.conv3 = nn.Sequential(nn.Conv2d(304, 256, kernel_size=1, padding=0, dilation=1, bias=False),
                                    BatchNorm2d(256), nn.ReLU(inplace=False),
                                    nn.Conv2d(256, 256, kernel_size=1, padding=0, dilation=1, bias=False),
                                    BatchNorm2d(256), nn.ReLU(inplace=False))
@@ -70,7 +69,7 @@ class Decoder(nn.Module):
     def __init__(self, num_classes=7, hbody_cls=3, fbody_cls=2):
         super(Decoder, self).__init__()
         # self.layer5 = MagicModule(2048, 512, 1)
-        self.layer5 = ASPPModule2(2048, 512)
+        self.layer5 = ASPPModule(2048, 512)
         self.layer6 = DecoderModule(num_classes)
         self.layerh = AlphaDecoder(hbody_cls)
         self.layerf = AlphaDecoder(fbody_cls)
