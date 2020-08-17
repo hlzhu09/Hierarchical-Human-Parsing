@@ -26,7 +26,7 @@ def get_arguments():
     parser.add_argument("--crop-size", type=int, default=473)
     parser.add_argument("--num-classes", type=int, default=7)
     parser.add_argument("--ignore-label", type=int, default=255)
-    parser.add_argument('--restore-from', default='./checkpoints/exp/abr_celovasz_miou69.56.pth', type=str)
+    parser.add_argument('--restore-from', default='./checkpoints/exp/baseline_pascal.pth', type=str)
 
     parser.add_argument("--is-mirror", action="store_true")
     parser.add_argument('--eval-scale', nargs='+', type=float, default=[1.0])
