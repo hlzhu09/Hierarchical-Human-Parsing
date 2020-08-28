@@ -10,8 +10,7 @@ from torch.autograd import Variable
 from torch.utils import data
 
 from dataset.data_pascal import TestGenerator
-# from network.fullfusenet import get_model
-from network.abrnet2 import get_model
+from network.baseline import get_model
 
 
 def get_arguments():
@@ -29,8 +28,8 @@ def get_arguments():
     parser.add_argument('--restore-from', default='./checkpoints/exp/baseline_pascal.pth', type=str)
 
     parser.add_argument("--is-mirror", action="store_true")
-    parser.add_argument('--eval-scale', nargs='+', type=float, default=[1.0])
-    # parser.add_argument('--eval-scale', nargs='+', type=float, default=[0.50, 0.75, 1.0, 1.25, 1.50])
+    parser.add_argument("--ms", action="store_true")
+    # parser.add_argument('--eval-scale', nargs='+', type=float, default=[1.0])
     # parser.add_argument('--eval-scale', nargs='+', type=float, default=[0.50, 0.75, 1.0, 1.25, 1.50, 1.75])
 
     parser.add_argument("--save-dir", type=str)
@@ -54,7 +53,7 @@ def main():
     # if not os.path.exists(args.save_dir):
     #     os.makedirs(args.save_dir)
 
-    palette = get_lip_palette()
+    palette = get_palette()
     restore_from = args.restore_from
     saved_state_dict = torch.load(restore_from)
     model.load_state_dict(saved_state_dict)
@@ -73,9 +72,13 @@ def main():
         image, label, ori_size, name = batch
 
         ori_size = ori_size[0].numpy()
+        if args.ms:
+            eval_scale=[0.50, 0.75, 1.0, 1.25, 1.50, 1.75]
+        else:
+            eval_scale=[1.0]
 
         output = predict(model, image.numpy(), (np.asscalar(ori_size[0]), np.asscalar(ori_size[1])),
-                         is_mirror=args.is_mirror, scales=args.eval_scale)
+                         is_mirror=args.is_mirror, scales=eval_scale)
         seg_pred = np.asarray(np.argmax(output, axis=2), dtype=np.uint8)
 
         # output_im = PILImage.fromarray(seg_pred)
@@ -208,29 +211,15 @@ def get_confusion_matrix_plot(conf_arr):
     plt.savefig('confusion_matrix.png', format='png')
 
 
-def get_lip_palette():
+def get_palette():
     palette = [0, 0, 0,
                128, 0, 0,
-               255, 0, 0,
-               0, 85, 0,
-               170, 0, 51,
-               255, 85, 0,
-               0, 0, 85,
-               0, 119, 221,
-               85, 85, 0,
-               0, 85, 85,
-               85, 51, 0,
-               52, 86, 128,
                0, 128, 0,
-               0, 0, 255,
-               51, 170, 221,
-               0, 255, 255,
-               85, 255, 170,
-               170, 255, 85,
-               255, 255, 0,
-               255, 170, 0]
+               128, 128, 0,
+               0, 0, 128,
+               128, 0, 128,
+               0, 128, 128]
     return palette
-
 
 if __name__ == '__main__':
     main()

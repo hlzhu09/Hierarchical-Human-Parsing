@@ -11,9 +11,12 @@ from tensorboardX import SummaryWriter
 from torch.nn import functional as F
 from torch.nn.parallel.scatter_gather import gather
 from torch.utils import data
-from dataset.data_pascal import DatasetGenerator
+
+from dataset.data_pascal import DataGenerator
 from network.baseline import get_model
-from utils.lovasz_loss import ABRLovaszCELoss as ABRLovaszLoss
+from progress.bar import Bar
+from utils.gnn_loss import gnn_loss_noatt as ABRLovaszLoss
+
 from utils.metric import *
 from utils.parallel import DataParallelModel, DataParallelCriterion
 from utils.visualize import inv_preprocess, decode_predictions
@@ -21,7 +24,7 @@ from utils.visualize import inv_preprocess, decode_predictions
 
 def parse_args():
     parser = argparse.ArgumentParser(description='PyTorch Segmentation')
-    parser.add_argument('--method', type=str, default='abr')
+    parser.add_argument('--method', type=str, default='baseline')
     # Datasets
     parser.add_argument('--root', default='./data/Person', type=str)
     parser.add_argument('--val-root', default='./data/Person', type=str)
@@ -32,9 +35,9 @@ def parse_args():
     parser.add_argument('--hbody-cls', type=int, default=3)
     parser.add_argument('--fbody-cls', type=int, default=2)
     # Optimization options
-    parser.add_argument('--epochs', default=151, type=int)
-    parser.add_argument('--batch-size', default=8, type=int)
-    parser.add_argument('--learning-rate', default=7e-3, type=float)
+    parser.add_argument('--epochs', default=150, type=int)
+    parser.add_argument('--batch-size', default=20, type=int)
+    parser.add_argument('--learning-rate', default=1e-2, type=float)
     parser.add_argument('--lr-mode', type=str, default='poly')
     parser.add_argument('--ignore-label', type=int, default=255)
     # Checkpoints
@@ -42,7 +45,7 @@ def parse_args():
     parser.add_argument('--snapshot_dir', type=str, default='./checkpoints/exp/')
     parser.add_argument('--log-dir', type=str, default='./runs/')
     parser.add_argument('--init', action="store_true")
-    parser.add_argument('--save-num', type=int, default=4)
+    parser.add_argument('--save-num', type=int, default=2)
     # Misc
     parser.add_argument('--seed', type=int, default=123)
     args = parser.parse_args()
@@ -98,15 +101,17 @@ def main(args):
     model.cuda()
 
     # define dataloader
-    train_loader = data.DataLoader(DatasetGenerator(root=args.root, list_path=args.lst,
+    train_loader = data.DataLoader(DataGenerator(root=args.root, list_path=args.lst,
                                                     crop_size=args.crop_size, training=True),
-                                   batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True)
-    val_loader = data.DataLoader(DatasetGenerator(root=args.val_root, list_path=args.val_lst,
+                                   batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True, drop_last=True)
+    val_loader = data.DataLoader(DataGenerator(root=args.val_root, list_path=args.val_lst,
                                                   crop_size=args.crop_size, training=False),
                                  batch_size=args.batch_size, shuffle=False, num_workers=4, pin_memory=True)
 
     # define criterion & optimizer
-    criterion = ABRLovaszLoss(ignore_index=args.ignore_label, only_present=True)
+    criterion = ABRLovaszLoss(adj_matrix = torch.tensor(
+            [[0, 1, 0, 0, 0, 0], [1, 0, 1, 0, 1, 0], [0, 1, 0, 1, 0, 0], [0, 0, 1, 0, 0, 0], [0, 1, 0, 0, 0, 1],
+             [0, 0, 0, 0, 1, 0]]), ignore_index=args.ignore_label, only_present=True, upper_part_list=[1, 2, 3, 4], lower_part_list=[5, 6], cls_p= args.num_classes, cls_h= args.hbody_cls, cls_f= args.fbody_cls)
     criterion = DataParallelCriterion(criterion).cuda()
 
     optimizer = optim.SGD(
@@ -124,7 +129,7 @@ def main(args):
         _ = train(model, train_loader, epoch, criterion, optimizer, writer)
 
         # validation
-        if epoch %10 ==0 or epoch > args.epochs-5:
+        if epoch %10 ==0 or epoch > args.epochs-10:
             val_pixacc, val_miou = validation(model, val_loader, epoch, writer)
             # save model
             if val_pixacc > best_val_pixAcc:
@@ -147,6 +152,8 @@ def train(model, train_loader, epoch, criterion, optimizer, writer):
     iter_num = 0
 
     # Iterate over data.
+    # bar = Bar('Processing | {}'.format('train'), max=len(train_loader))
+    # bar.check_tty = False
     from tqdm import tqdm
     tbar = tqdm(train_loader)
     for i_iter, batch in enumerate(tbar):
@@ -156,6 +163,7 @@ def train(model, train_loader, epoch, criterion, optimizer, writer):
         # adjust learning rate
         iters_per_epoch = len(train_loader)
         lr = adjust_learning_rate(optimizer, epoch, i_iter, iters_per_epoch, method=args.lr_mode)
+        # print("\n=>epoch  %d, learning_rate = %f" % (epoch, lr))
         image, label, hlabel, flabel, _ = batch
         images, labels, hlabel, flabel = image.cuda(), label.long().cuda(), hlabel.cuda(), flabel.cuda()
         torch.set_grad_enabled(True)
@@ -181,10 +189,15 @@ def train(model, train_loader, epoch, criterion, optimizer, writer):
         tbar.set_description('{} / {} | Time: {batch_time:.4f} | Loss: {loss:.4f}'.format(iter_num, len(train_loader),
                                                                                   batch_time=batch_time,
                                                                                   loss=train_loss / iter_num))
+        # bar.suffix = '{} / {} | Time: {batch_time:.4f} | Loss: {loss:.4f}'.format(iter_num, len(train_loader),
+        #                                                                           batch_time=batch_time,
+        #                                                                           loss=train_loss / iter_num)
+        # bar.next()
 
     epoch_loss = train_loss / iter_num
     writer.add_scalar('train_epoch_loss', epoch_loss, epoch)
     tbar.close()
+    # bar.finish()
 
     return epoch_loss
 
@@ -210,22 +223,22 @@ def validation(model, val_loader, epoch, writer):
             h, w = target.size(1), target.size(2)
             outputs = model(image)
             outputs = gather(outputs, 0, dim=0)
-            preds = F.interpolate(input=outputs[0], size=(h, w), mode='bilinear', align_corners=True)
-            preds_hb = F.interpolate(input=outputs[1], size=(h, w), mode='bilinear', align_corners=True)
-            preds_fb = F.interpolate(input=outputs[2], size=(h, w), mode='bilinear', align_corners=True)
-            if idx % 50 == 0:
-                img_vis = inv_preprocess(image, num_images=args.save_num)
-                label_vis = decode_predictions(target.int(), num_images=args.save_num, num_classes=args.num_classes)
-                pred_vis = decode_predictions(torch.argmax(preds, dim=1), num_images=args.save_num,
-                                              num_classes=args.num_classes)
+            preds = F.interpolate(input=outputs[0][-1], size=(h, w), mode='bilinear', align_corners=True)
+            preds_hb = F.interpolate(input=outputs[1][-1], size=(h, w), mode='bilinear', align_corners=True)
+            preds_fb = F.interpolate(input=outputs[2][-1], size=(h, w), mode='bilinear', align_corners=True)
+            # if idx % 50 == 0:
+            #     img_vis = inv_preprocess(image, num_images=args.save_num)
+            #     label_vis = decode_predictions(target.int(), num_images=args.save_num, num_classes=args.num_classes)
+            #     pred_vis = decode_predictions(torch.argmax(preds, dim=1), num_images=args.save_num,
+            #                                   num_classes=args.num_classes)
 
-                # visual grids
-                img_grid = torchvision.utils.make_grid(torch.from_numpy(img_vis.transpose(0, 3, 1, 2)))
-                label_grid = torchvision.utils.make_grid(torch.from_numpy(label_vis.transpose(0, 3, 1, 2)))
-                pred_grid = torchvision.utils.make_grid(torch.from_numpy(pred_vis.transpose(0, 3, 1, 2)))
-                writer.add_image('val_images', img_grid, epoch * len(val_loader) + idx + 1)
-                writer.add_image('val_labels', label_grid, epoch * len(val_loader) + idx + 1)
-                writer.add_image('val_preds', pred_grid, epoch * len(val_loader) + idx + 1)
+            #     # visual grids
+            #     img_grid = torchvision.utils.make_grid(torch.from_numpy(img_vis.transpose(0, 3, 1, 2)))
+            #     label_grid = torchvision.utils.make_grid(torch.from_numpy(label_vis.transpose(0, 3, 1, 2)))
+            #     pred_grid = torchvision.utils.make_grid(torch.from_numpy(pred_vis.transpose(0, 3, 1, 2)))
+            #     writer.add_image('val_images', img_grid, epoch * len(val_loader) + idx + 1)
+            #     writer.add_image('val_labels', label_grid, epoch * len(val_loader) + idx + 1)
+            #     writer.add_image('val_preds', pred_grid, epoch * len(val_loader) + idx + 1)
 
             # pixelAcc
             correct, labeled = batch_pix_accuracy(preds.data, target)
@@ -252,7 +265,13 @@ def validation(model, val_loader, epoch, writer):
             tbar.set_description('{} / {} | {pixAcc:.4f}, {IoU:.4f} |' \
                          '{pixAcc_hb:.4f}, {IoU_hb:.4f} |' \
                          '{pixAcc_fb:.4f}, {IoU_fb:.4f}'.format(idx + 1, len(val_loader), pixAcc=pixAcc, IoU=IoU,pixAcc_hb=pixAcc_hb, IoU_hb=IoU_hb,pixAcc_fb=pixAcc_fb, IoU_fb=IoU_fb))
-
+            # bar.suffix = '{} / {} | pixAcc: {pixAcc:.4f}, mIoU: {IoU:.4f} |' \
+            #              'pixAcc_hb: {pixAcc_hb:.4f}, mIoU_hb: {IoU_hb:.4f} |' \
+            #              'pixAcc_fb: {pixAcc_fb:.4f}, mIoU_fb: {IoU_fb:.4f}'.format(idx + 1, len(val_loader),
+            #                                                                         pixAcc=pixAcc, IoU=IoU,
+            #                                                                         pixAcc_hb=pixAcc_hb, IoU_hb=IoU_hb,
+            #                                                                         pixAcc_fb=pixAcc_fb, IoU_fb=IoU_fb)
+            # bar.next()
 
     print('\n per class iou part: {}'.format(per_class_iu(hist)*100))
     print('per class iou hb: {}'.format(per_class_iu(hist_hb)*100))
@@ -268,7 +287,9 @@ def validation(model, val_loader, epoch, writer):
     writer.add_scalar('val_mIoU_hb', mIoU_hb, epoch)
     writer.add_scalar('val_pixAcc_fb', pixAcc_fb, epoch)
     writer.add_scalar('val_mIoU_fb', mIoU_fb, epoch)
+    # bar.finish()
     tbar.close()
+    
     return pixAcc, mIoU
 
 

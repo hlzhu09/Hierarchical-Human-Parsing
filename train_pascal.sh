@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=0,1,2,3 python train_baseline.py --init --method baseline --crop-size 473 --batch-size 20 --learning-rate 1e-2
