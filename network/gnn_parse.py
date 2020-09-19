@@ -66,10 +66,8 @@ class Composition(nn.Module):
     def __init__(self, hidden_dim, parts_num):
         super(Composition, self).__init__()
         self.relation = nn.Sequential(
-            nn.Conv2d(2 * hidden_dim, 2*hidden_dim, kernel_size=1, padding=0, stride=1, bias=False),
-            BatchNorm2d(2*hidden_dim), nn.ReLU(inplace=False),
             nn.Conv2d(2 * hidden_dim, hidden_dim, kernel_size=1, padding=0, stride=1, bias=False),
-            BatchNorm2d(hidden_dim), nn.ReLU(inplace=False),
+            BatchNorm2d(hidden_dim), nn.ReLU(inplace=False)
         )
         self.comp_att = nn.Sequential(
             nn.Conv2d(parts_num * hidden_dim, 1, kernel_size=1, padding=0, stride=1, bias=True),
@@ -88,11 +86,9 @@ class Decomposition(nn.Module):
         )
 
         self.relation = nn.Sequential(
-            nn.Conv2d(2 * hidden_dim, 2*hidden_dim, kernel_size=1, padding=0, stride=1, bias=False),
-            BatchNorm2d(2*hidden_dim), nn.ReLU(inplace=False),
-            nn.Conv2d(2*hidden_dim, hidden_dim, kernel_size=1, padding=0, stride=1, bias=False),
+            nn.Conv2d(2 * hidden_dim, hidden_dim, kernel_size=1, padding=0, stride=1, bias=False),
             BatchNorm2d(hidden_dim), nn.ReLU(inplace=False)
-                   )
+        )
 
     def forward(self, parent, child_list, parent_att):
         decomp_map = self.decomp_att(torch.cat([parent]+child_list, dim=1))
@@ -184,9 +180,7 @@ class Dependency(nn.Module):
     def __init__(self, in_dim=256, hidden_dim=10):
         super(Dependency, self).__init__()
         self.relation = nn.Sequential(
-            nn.Conv2d(2*hidden_dim, 2*hidden_dim, kernel_size=1, padding=0, stride=1, bias=False),
-            BatchNorm2d(2*hidden_dim), nn.ReLU(inplace=False),
-            nn.Conv2d(2*hidden_dim, hidden_dim, kernel_size=1, padding=0, stride=1, bias=False),
+            nn.Conv2d(2 * hidden_dim, hidden_dim, kernel_size=1, padding=0, stride=1, bias=False),
             BatchNorm2d(hidden_dim), nn.ReLU(inplace=False)
         )
     def forward(self, hv, hu_context, dep_att_huv):
