@@ -9,7 +9,6 @@ from modules.com_mod import Bottleneck, ResGridNet, SEModule
 from modules.parse_mod import ASPPModule
 
 BatchNorm2d = functools.partial(InPlaceABNSync, activation='none')
-from modules.convGRU import ConvGRU
 
 class DecoderModule(nn.Module):
     
@@ -17,8 +16,14 @@ class DecoderModule(nn.Module):
         super(DecoderModule, self).__init__()
         self.conv0 = nn.Sequential(nn.Conv2d(512, 256, kernel_size=1, padding=0, bias=False),
                                    BatchNorm2d(256), nn.ReLU(inplace=False))
+        self.se = nn.Sequential(nn.AdaptiveAvgPool2d(1),
+                            nn.Conv2d(256, 256, 1, bias=False),
+                            nn.ReLU(True),
+                            nn.Conv2d(256, 256, 1, bias=True),
+                            nn.Sigmoid())
     def forward(self, x):
         out=self.conv0(x)
+        out = out + self.se(out)*out
         return out
 
 
